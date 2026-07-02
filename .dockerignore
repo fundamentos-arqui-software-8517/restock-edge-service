@@ -1,0 +1,7 @@
+.venv
+__pycache__
+*.pyc
+app.log
+restock_edge.db
+.git
+.env

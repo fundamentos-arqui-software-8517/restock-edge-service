@@ -1,0 +1,133 @@
+@startuml
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+
+title Restock Edge Service - Base Class Diagram
+
+package "IAM Bounded Context" {
+  package "interfaces" {
+    class iam_api
+    class authenticate_request {
+      +validate request credentials
+    }
+  }
+
+  package "application" {
+    class AuthApplicationService {
+      -device_repository: DeviceRepository
+      -auth_service: AuthService
+      +authenticate(device_id, api_key): bool
+      +get_or_create_test_device(): Device
+    }
+  }
+
+  package "domain" {
+    class AuthService {
+      +authenticate(device): bool
+    }
+
+    class Device {
+      +device_id: str
+      +api_key: str
+      +created_at: datetime
+    }
+  }
+
+  package "infrastructure" {
+    class DeviceRepository {
+      +find_by_id_and_api_key(device_id, api_key): Device
+      +get_or_create_test_device(): Device
+    }
+
+    class DeviceModel {
+      +device_id: CharField
+      +api_key: CharField
+      +created_at: DateTimeField
+    }
+  }
+}
+
+package "Tracking Bounded Context" {
+  package "interfaces" {
+    class tracking_api
+    class create_weight_record {
+      +POST /api/v1/tracking/weight-records
+    }
+  }
+
+  package "application" {
+    class WeightRecordApplicationService {
+      -weight_record_repository: WeightRecordRepository
+      -weight_record_service: WeightRecordService
+      -device_repository: DeviceRepository
+      +create_weight_record(device_id, weight, created_at, api_key): WeightRecord
+    }
+  }
+
+  package "domain" {
+    class WeightRecordService {
+      +create_record(device_id, weight, created_at): WeightRecord
+    }
+
+    class WeightRecord {
+      +id: int
+      +device_id: str
+      +weight: float
+      +created_at: datetime
+    }
+  }
+
+  package "infrastructure" {
+    class WeightRecordRepository {
+      +save(weight_record): WeightRecord
+    }
+
+    class WeightRecordModel {
+      +id: AutoField
+      +device_id: CharField
+      +weight: FloatField
+      +created_at: DateTimeField
+    }
+  }
+}
+
+package "Shared Components" {
+  package "infrastructure" {
+    class db
+    class init_db {
+      +init_db()
+    }
+  }
+}
+
+class app {
+  +setup()
+  +run()
+}
+
+app ..> iam_api : registers
+app ..> tracking_api : registers
+app ..> init_db : initializes
+
+authenticate_request --> AuthApplicationService : uses
+AuthApplicationService --> DeviceRepository : uses
+AuthApplicationService --> AuthService : uses
+DeviceRepository --> DeviceModel : uses
+DeviceRepository ..> Device : creates
+AuthService --> Device : authenticates
+
+create_weight_record --> authenticate_request : validates
+create_weight_record --> WeightRecordApplicationService : uses
+WeightRecordApplicationService --> DeviceRepository : validates device
+WeightRecordApplicationService --> WeightRecordService : uses
+WeightRecordApplicationService --> WeightRecordRepository : uses
+WeightRecordService ..> WeightRecord : creates
+WeightRecordRepository --> WeightRecordModel : uses
+WeightRecordRepository ..> WeightRecord : creates
+
+DeviceModel --> db : uses
+WeightRecordModel --> db : uses
+init_db --> DeviceModel : creates table
+init_db --> WeightRecordModel : creates table
+
+@enduml

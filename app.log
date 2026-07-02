@@ -1,0 +1,25 @@
+2026-07-01 20:22:40,747 INFO: MQTT Client Shutdown [in C:\iot\restock-edge-service\shared\infrastructure\mqtt_client.py:178]
+2026-07-01 20:34:54,877 INFO: Map([<Rule '/static/<filename>' (GET, HEAD, OPTIONS) -> static>,
+ <Rule '/api/v1/iam/devices/status' (POST, OPTIONS) -> iam_api.authenticate_request>,
+ <Rule '/api/v1/auth/sign-up' (POST, OPTIONS) -> iam_api.register_device>,
+ <Rule '/api/v1/tracking/weight-records' (POST, OPTIONS) -> tracking_api.create_weight_record>,
+ <Rule '/api/v1/tracking/environment-records' (POST, OPTIONS) -> tracking_api.create_environment_record>,
+ <Rule '/api/v1/devices/<device_id>/thresholds' (POST, OPTIONS) -> devices_api.create_threshold_for_device>,
+ <Rule '/api/v1/devices/<device_id>/thresholds' (PUT, OPTIONS) -> devices_api.update_threshold_for_device>]) [in C:\iot\restock-edge-service\app.py:99]
+2026-07-01 20:34:55,067 INFO: [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://10.179.125.17:5000 [in C:\iot\restock-edge-service\venv\Lib\site-packages\werkzeug\_internal.py:97]
+2026-07-01 20:34:55,067 INFO: [33mPress CTRL+C to quit[0m [in C:\iot\restock-edge-service\venv\Lib\site-packages\werkzeug\_internal.py:97]
+2026-07-01 20:34:55,069 INFO:  * Restarting with stat [in C:\iot\restock-edge-service\venv\Lib\site-packages\werkzeug\_internal.py:97]
+2026-07-01 20:34:55,644 INFO: Map([<Rule '/static/<filename>' (GET, HEAD, OPTIONS) -> static>,
+ <Rule '/api/v1/iam/devices/status' (POST, OPTIONS) -> iam_api.authenticate_request>,
+ <Rule '/api/v1/auth/sign-up' (POST, OPTIONS) -> iam_api.register_device>,
+ <Rule '/api/v1/tracking/weight-records' (POST, OPTIONS) -> tracking_api.create_weight_record>,
+ <Rule '/api/v1/tracking/environment-records' (POST, OPTIONS) -> tracking_api.create_environment_record>,
+ <Rule '/api/v1/devices/<device_id>/thresholds' (POST, OPTIONS) -> devices_api.create_threshold_for_device>,
+ <Rule '/api/v1/devices/<device_id>/thresholds' (PUT, OPTIONS) -> devices_api.update_threshold_for_device>]) [in C:\iot\restock-edge-service\app.py:99]
+2026-07-01 20:34:55,683 WARNING:  * Debugger is active! [in C:\iot\restock-edge-service\venv\Lib\site-packages\werkzeug\_internal.py:97]
+2026-07-01 20:34:55,685 INFO:  * Debugger PIN: 949-744-895 [in C:\iot\restock-edge-service\venv\Lib\site-packages\werkzeug\_internal.py:97]
+2026-07-01 20:38:32,761 INFO: 127.0.0.1 - - [01/Jul/2026 20:38:32] "POST /api/v1/iam/devices/status HTTP/1.1" 200 - [in C:\iot\restock-edge-service\venv\Lib\site-packages\werkzeug\_internal.py:97]
+2026-07-01 20:38:44,608 INFO: 127.0.0.1 - - [01/Jul/2026 20:38:44] "[35m[1mPOST /api/v1/tracking/weight-records HTTP/1.1[0m" 500 - [in C:\iot\restock-edge-service\venv\Lib\site-packages\werkzeug\_internal.py:97]
