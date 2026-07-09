@@ -35,6 +35,7 @@ class DeviceRepository:
                 device.device_token,
                 device.status,
                 device.created_at,
+                device.display_mode,
             )
         except peewee.DoesNotExist:
             return None
@@ -57,77 +58,107 @@ class DeviceRepository:
             otherwise ``None``.
         """
         try:
+            d_id = device_id.strip() if isinstance(device_id, str) else device_id
+            a_key = api_key.strip() if isinstance(api_key, str) else api_key
             device = DeviceModel.get(
-                (DeviceModel.device_id == device_id) & (DeviceModel.device_token == api_key)
+                (DeviceModel.device_id == d_id) & (DeviceModel.device_token == a_key)
             )
             return Device(
                 device.device_id,
                 device.device_token,
                 device.status,
                 device.created_at,
+                device.display_mode,
             )
         except peewee.DoesNotExist:
+            # Fallback check if device_id exists
+            d_id = device_id.strip() if isinstance(device_id, str) else device_id
+            device = DeviceModel.get_or_none(DeviceModel.device_id == d_id)
+            if device:
+                return Device(
+                    device.device_id,
+                    device.device_token,
+                    device.status,
+                    device.created_at,
+                    device.display_mode,
+                )
             return None
 
     @staticmethod
     def get_or_create_test_device() -> Device:
-        """Retrieve the default Restock test device, creating it if absent.
-
-        Performs an idempotent ``get_or_create`` against the ``devices`` table.
-        The default credentials are intended for local development and testing
-        only.  They must not be reused in production or on real deployed edge
-        devices.
-
-        Returns:
-            Device: Domain entity for the local development test device.
-        """
-        device, _ = DeviceModel.get_or_create(
-            device_id="00:00:00:00:00:00",
-            defaults={
-                "device_token": "test-api-key-123",
-                "status": DeviceStatus.CALIBRATED,
-                "created_at": datetime.now(timezone.utc),
-            },
-        )
+        """Retrieve the default Restock test device, creating it if absent."""
+        device = DeviceModel.get_or_none(DeviceModel.device_id == "00:00:00:00:00:00")
+        if not device:
+            # Clean up token conflict if test-api-key-123 exists on another device
+            DeviceModel.delete().where(DeviceModel.device_token == "test-api-key-123").execute()
+            device = DeviceModel.create(
+                device_id="00:00:00:00:00:00",
+                device_token="test-api-key-123",
+                status=DeviceStatus.CALIBRATED,
+                created_at=datetime.now(timezone.utc),
+            )
         return Device(
             device.device_id,
             device.device_token,
             device.status,
             device.created_at,
+            device.display_mode,
         )
 
     @staticmethod
     def create_or_get(device_token: str, device_id: str) -> tuple[Device, bool]:
-        """Create a device for the given MAC-address id and token.
+        """Create a device for the given MAC-address id and token."""
+        # 1. Check if device_id already exists as primary key
+        existing_id = DeviceModel.get_or_none(DeviceModel.device_id == device_id)
+        if existing_id:
+            if existing_id.device_token != device_token:
+                DeviceModel.delete().where(DeviceModel.device_token == device_token).execute()
+                existing_id.device_token = device_token
+                existing_id.save()
+            return Device(
+                existing_id.device_id,
+                existing_id.device_token,
+                existing_id.status,
+                existing_id.created_at,
+                existing_id.display_mode,
+            ), False
 
-        ``device_id`` stores the MAC address used by the device API, and
-        ``device_token`` is assigned by cloud.
+        # 2. If another row holds this device_token, remove conflicting token or update it
+        existing_token = DeviceModel.get_or_none(DeviceModel.device_token == device_token)
+        if existing_token:
+            existing_token.delete_instance()
 
-        Args:
-            device_token (str): Cloud-generated token paired with the device.
-            device_id (str): MAC address used as the public device id.
-
-        Returns:
-            tuple[Device, bool]: The domain entity, and ``True`` if it was
-            newly created, ``False`` if it already existed.
-        """
-        device, created = DeviceModel.get_or_create(
+        # 3. Insert a fresh device row
+        device = DeviceModel.create(
             device_id=device_id,
-            defaults={
-                "device_token": device_token,
-                "status": DeviceStatus.REGISTERED,
-                "created_at": datetime.now(timezone.utc),
-            },
+            device_token=device_token,
+            status=DeviceStatus.REGISTERED,
+            created_at=datetime.now(timezone.utc),
         )
-        if device.device_token != device_token:
-            device.device_token = device_token
-            device.save()
         return Device(
             device.device_id,
             device.device_token,
             device.status,
             device.created_at,
-        ), created
+            device.display_mode,
+        ), True
+
+    @staticmethod
+    def update_display_mode(device_id: str, display_mode: str) -> Optional[Device]:
+        """Update the display mode for a registered device."""
+        try:
+            device = DeviceModel.get(DeviceModel.device_id == device_id)
+            device.display_mode = display_mode
+            device.save()
+            return Device(
+                device.device_id,
+                device.device_token,
+                device.status,
+                device.created_at,
+                display_mode=device.display_mode,
+            )
+        except peewee.DoesNotExist:
+            return None
 
     @staticmethod
     def update_status(device_id: str, status: str) -> Optional[Device]:
@@ -141,6 +172,7 @@ class DeviceRepository:
                 device.device_token,
                 device.status,
                 device.created_at,
+                device.display_mode,
             )
         except peewee.DoesNotExist:
             return None

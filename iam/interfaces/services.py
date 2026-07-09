@@ -95,3 +95,17 @@ def register_device():
         "status": device.status,
         "created_at": device.created_at.isoformat(),
     }), status_code
+
+@iam_api.route("/api/v1/devices/<device_id>/display-mode", methods=["PATCH"])
+def update_display_mode(device_id: str):
+    """ Update the display mode for a registered device."""
+
+    data = request.json
+    try:
+        display_mode = data["display_mode"]
+        device = auth_service.update_display_mode(device_id, display_mode)
+        return jsonify({"success": "Display mode updated successfully for device " + device.device_id}), 200
+    except KeyError:
+        return jsonify({"error": "Missing required fields"}), 400
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400

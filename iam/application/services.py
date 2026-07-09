@@ -7,6 +7,7 @@ in the domain layer.
 from typing import Optional
 
 from iam.domain.entities import Device
+from iam.domain.enums import DisplayMode
 from iam.domain.services import AuthService, DeviceStatus
 from iam.infrastructure.repositories import DeviceRepository
 
@@ -91,6 +92,25 @@ class AuthApplicationService:
     def mark_device_calibrated(self, device_id: str) -> Device:
         """Move a device to CALIBRATED so embedded communication is allowed."""
         device = self.device_repository.update_status(device_id, DeviceStatus.CALIBRATED)
+        if device is None:
+            raise ValueError("Device not found")
+        return device
+
+    def get_by_id(self, device_id: str) -> Device:
+        """Retrieve a device by its MAC-address id."""
+        device = self.device_repository.find_by_id(device_id)
+        if device is None:
+            raise ValueError("Device not found")
+        return device
+
+    def update_display_mode(self, device_id: str, display_mode: str) -> Device:
+        """Update the display mode for a registered device."""
+        available_display_modes = [mode.value for mode in DisplayMode]
+
+        if display_mode not in available_display_modes:
+            raise ValueError("Invalid display mode")
+
+        device = self.device_repository.update_display_mode(device_id, display_mode)
         if device is None:
             raise ValueError("Device not found")
         return device

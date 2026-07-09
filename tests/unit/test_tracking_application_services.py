@@ -81,6 +81,68 @@ class TestWeightRecordApplicationServiceCreateWeightRecord:
         self.service.create_weight_record("device-1", 500.0, None)
         self.mock_weight_repo.save.assert_called_once()
 
+    def test_sends_anomaly_report_when_anomaly_detected(self):
+        """UT-ES-09a: Physical anomaly detected → _send_anomaly_to_cloud is called
+        once with the device id and the raw weight reading."""
+        self.mock_device_repo.find_by_id.return_value = MagicMock()
+        threshold = MagicMock()
+        threshold.custom_supply_weight = 100.0
+        threshold.anomaly_threshold = None
+        self.mock_threshold_repo.get_by_device_id.return_value = threshold
+        self.mock_weight_service.calculate_physical_stock.return_value = 1
+        record = self._make_record(1)
+        self.mock_weight_service.create_record.return_value = record
+        self.mock_weight_repo.save.return_value = record
+        self.mock_weight_repo.find_by_device_in_interval.return_value = [record]
+        self.mock_weight_service.calculate_averages.return_value = {"average_physical_stock": 1.0}
+        self.mock_weight_service.is_physical_anomaly.return_value = True
+
+        with patch.object(self.service, "_send_anomaly_to_cloud") as mock_send:
+            self.service.create_weight_record("device-1", 110.0, None)
+
+        mock_send.assert_called_once()
+        assert mock_send.call_args.args[0] == "device-1"
+        assert mock_send.call_args.args[1] == 110.0
+
+    def test_skips_anomaly_report_when_within_tolerance(self):
+        """UT-ES-09b: Weight variation within tolerance → _send_anomaly_to_cloud is
+        never called."""
+        self.mock_device_repo.find_by_id.return_value = MagicMock()
+        threshold = MagicMock()
+        threshold.custom_supply_weight = 100.0
+        threshold.anomaly_threshold = None
+        self.mock_threshold_repo.get_by_device_id.return_value = threshold
+        self.mock_weight_service.calculate_physical_stock.return_value = 1
+        record = self._make_record(1)
+        self.mock_weight_service.create_record.return_value = record
+        self.mock_weight_repo.save.return_value = record
+        self.mock_weight_repo.find_by_device_in_interval.return_value = [record]
+        self.mock_weight_service.calculate_averages.return_value = {"average_physical_stock": 1.0}
+        self.mock_weight_service.is_physical_anomaly.return_value = False
+
+        with patch.object(self.service, "_send_anomaly_to_cloud") as mock_send:
+            self.service.create_weight_record("device-1", 100.0, None)
+
+        mock_send.assert_not_called()
+
+    def test_defaults_custom_supply_weight_when_threshold_missing(self):
+        """UT-ES-09c: When no device threshold is registered, a default
+        custom_supply_weight of 100.0 is used instead of raising."""
+        self.mock_device_repo.find_by_id.return_value = MagicMock()
+        self.mock_threshold_repo.get_by_device_id.return_value = None
+        self.mock_weight_service.calculate_physical_stock.return_value = 1
+        record = self._make_record(1)
+        self.mock_weight_service.create_record.return_value = record
+        self.mock_weight_repo.save.return_value = record
+        self.mock_weight_repo.find_by_device_in_interval.return_value = [record]
+        self.mock_weight_service.calculate_averages.return_value = {"average_physical_stock": 1.0}
+        self.mock_weight_service.is_physical_anomaly.return_value = False
+
+        with patch.object(self.service, "_send_anomaly_to_cloud"):
+            self.service.create_weight_record("device-1", 100.0, None)
+
+        self.mock_weight_service.calculate_physical_stock.assert_called_once_with(100.0, 100.0)
+
 
 # ---------------------------------------------------------------------------
 # EnvironmentRecordApplicationService – Unit Tests
