@@ -59,7 +59,7 @@ def create_weight_record():
         device_id = data["device_id"]
         weight = data["weight"]
         created_at = data.get("created_at")
-        record = weight_record_service.create_weight_record(
+        record, averages = weight_record_service.create_weight_record(
             device_id,
             weight,
             created_at,
@@ -68,6 +68,7 @@ def create_weight_record():
             "id": record.id,
             "device_id": record.device_id,
             "weight": record.weight,
+            "physical_stock": record.physical_stock,
             "created_at": record.created_at.isoformat(),
         }), 201
     except KeyError:

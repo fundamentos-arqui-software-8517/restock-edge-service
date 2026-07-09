@@ -80,8 +80,8 @@ class WeightRecordService:
         # Calculate the residual weight between the raw weight and the expected weight
         residual_weight = abs(raw_weight - expected_weight)
 
-        # Calculate the permitted weight difference based on the custom supply weight and the permitted difference
-        permitted_weight_difference = custom_supply_weight * permitted_difference
+        # Calculate the permitted weight difference based on the permitted difference in grams
+        permitted_weight_difference = permitted_difference
 
         # Evaluate the residual weight against the permitted weight difference
         if residual_weight <= permitted_weight_difference:
@@ -146,6 +146,44 @@ class WeightRecordService:
         return {
             "average_physical_stock": round(total_physical_stock / count, 2),
         }
+
+    @classmethod
+    def is_physical_anomaly(
+        cls,
+        weight: float,
+        custom_supply_weight: float | None,
+        anomaly_threshold: float | None = None
+    ) -> bool:
+        """Determines whether a weight reading represents a physical anomaly.
+
+        Compares the residual weight difference against the configured anomaly threshold
+        or calculated permitted tolerance.
+
+        :param weight: Raw weight reading from the scale.
+        :param custom_supply_weight: Weight of a single unit of supply.
+        :param anomaly_threshold: Configured threshold for physical anomaly detection.
+        :return: True if the weight variation exceeds the threshold/tolerance, False otherwise.
+        """
+        if custom_supply_weight is None or custom_supply_weight <= 0:
+            return False
+
+        calculated_stock = weight / custom_supply_weight
+        nearest_stock = round(calculated_stock)
+        expected_weight = nearest_stock * custom_supply_weight
+        residual_weight = abs(weight - expected_weight)
+
+        if anomaly_threshold is not None and anomaly_threshold > 0:
+            permitted_threshold_grams = custom_supply_weight * (anomaly_threshold / 100.0)
+            return residual_weight > permitted_threshold_grams
+
+        permitted_difference = min(
+            cls.MAXIMUM_DIFFERENCE_GRAMS,
+            max(
+                cls.ABSOLUTE_TOLERANCE_GRAMS,
+                custom_supply_weight * cls.RELATIVE_TOLERANCE_PERCENTAGE
+            )
+        )
+        return residual_weight > permitted_difference
 
 
 class EnvironmentRecordService:

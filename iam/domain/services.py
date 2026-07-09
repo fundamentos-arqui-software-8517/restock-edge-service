@@ -30,4 +30,4 @@ class AuthService:
         Returns:
             bool: ``True`` if ``device`` is not ``None``; otherwise ``False``.
         """
-        return device is not None and device.status == DeviceStatus.CALIBRATED
+        return device is not None

@@ -5,7 +5,7 @@ weight telemetry record.  Entities carry identity and encapsulate domain state;
 they should only be created or mutated through domain services that enforce
 business invariants.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class WeightRecord:
@@ -47,6 +47,14 @@ class WeightRecord:
         self.raw_weight = raw_weight
         self.physical_stock = physical_stock
         self.created_at = created_at
+
+    @property
+    def id(self):
+        return self.weight_record_id
+
+    @property
+    def weight(self):
+        return self.raw_weight
 
 
 class EnvironmentRecord:

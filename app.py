@@ -15,6 +15,7 @@ import logging
 import signal
 import threading
 
+from dotenv import load_dotenv
 from flask import Flask
 
 import iam.application.services
@@ -23,6 +24,9 @@ from iam.interfaces.services import iam_api
 from shared.infrastructure.database import init_db
 from shared.infrastructure.mqtt_client import shutdown_mqtt_client, init_mqtt_client
 from tracking.interfaces.rest_services import tracking_api
+
+# Load environment variables from .env file
+load_dotenv()
 
 # The Flask application instance.
 app = Flask(__name__)
@@ -100,5 +104,6 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=5000,
-        debug=True
+        debug=True,
+        use_reloader=False
     )
