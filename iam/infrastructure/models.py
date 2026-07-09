@@ -28,6 +28,7 @@ class Device(Model):
     device_id = CharField(primary_key=True)
     device_token = CharField(unique=True)
     status = CharField(default="REGISTERED")
+    display_mode = CharField(default="DISPLAY_MODE_WEIGHT")
     created_at = DateTimeField()
 
     class Meta:

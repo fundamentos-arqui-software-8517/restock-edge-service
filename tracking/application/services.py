@@ -19,8 +19,10 @@ from tracking.domain.services import WeightRecordService
 from tracking.domain.services import EnvironmentRecordService
 from tracking.infrastructure.repositories import WeightRecordRepository
 from tracking.infrastructure.repositories import EnvironmentRecordRepository
+from tracking.infrastructure.clients import telemetry_sync_client
 from iam.infrastructure.repositories import DeviceRepository
 
+# Load environment variables from .env file
 load_dotenv()
 
 
@@ -49,6 +51,58 @@ class WeightRecordApplicationService:
         self.weight_record_service = WeightRecordService()
         self.device_threshold_repository = DeviceThresholdRepository()
         self.device_repository = DeviceRepository()
+        self.environment_record_repository = EnvironmentRecordRepository()
+
+    @staticmethod
+    def _send_anomaly_to_cloud(
+        device_id: str,
+        registered_value: float,
+        timestamp_iso: str | None = None,
+    ) -> None:
+        """Sends a physical anomaly report to the cloud backend API.
+
+        Scenario 1: If the physical anomaly threshold is breached, post to api/v1/anomalies.
+        Scenario 3: Safely catches HTTPError, URLError, TimeoutError without crashing.
+        """
+        base_url = os.getenv("CLOUD_API_BASE_URL")
+        anomalies_url = os.getenv("CLOUD_ANOMALIES_URL")
+        token = os.getenv("CLOUD_API_TOKEN")
+
+        if not anomalies_url and base_url:
+            anomalies_url = f"{base_url.rstrip('/')}/api/v1/anomalies"
+
+        if not anomalies_url:
+            logging.info("Cloud anomaly reporting skipped: CLOUD_ANOMALIES_URL is not configured")
+            return
+
+        from datetime import datetime, timezone
+        payload = {
+            "deviceId": device_id,
+            "registeredValue": registered_value,
+            "timestamp": timestamp_iso or datetime.now(timezone.utc).isoformat()
+        }
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        body = json.dumps(payload).encode("utf-8")
+        cloud_request = request.Request(
+            anomalies_url,
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+
+        try:
+            with request.urlopen(cloud_request, timeout=5) as response:
+                logging.info(
+                    "Physical anomaly reported to cloud with status %s",
+                    response.status,
+                )
+        except (error.HTTPError, error.URLError, TimeoutError) as ex:
+            logging.exception("Error reporting physical anomaly to cloud: %s", ex)
+        except Exception as ex:
+            logging.exception("Unexpected error reporting physical anomaly: %s", ex)
 
     def create_weight_record(
         self,
@@ -75,8 +129,15 @@ class WeightRecordApplicationService:
             raise ValueError("Device not found")
 
         # Retrieves the custom supply weight for the device
-        device_threshold: DeviceThreshold = self.device_threshold_repository.get_by_device_id(device_id)
-        custom_supply_weight = device_threshold.custom_supply_weight
+        try:
+            device_threshold = self.device_threshold_repository.get_by_device_id(device_id)
+            custom_supply_weight = device_threshold.custom_supply_weight if device_threshold else 100.0
+        except Exception:
+            device_threshold = None
+            custom_supply_weight = 100.0
+
+        if custom_supply_weight is None or custom_supply_weight <= 0:
+            custom_supply_weight = 100.0
 
         # Calculates the physical stock based on the raw weight and custom supply weight
         physical_stock = float(self.weight_record_service.calculate_physical_stock(weight, custom_supply_weight))
@@ -87,16 +148,55 @@ class WeightRecordApplicationService:
         # Persists the record and computes updated averages
         saved_record = self.weight_record_repository.save(record)
 
+        # Evaluates the physical anomaly threshold
+        anomaly_threshold = getattr(device_threshold, "anomaly_threshold", None)
+        is_anomaly = self.weight_record_service.is_physical_anomaly(
+            weight,
+            custom_supply_weight,
+            anomaly_threshold
+        )
+
+        logging.info(
+            "Evaluating anomaly for device %s: weight=%s, custom_supply_weight=%s, anomaly_threshold=%s -> is_anomaly=%s",
+            device_id, weight, custom_supply_weight, anomaly_threshold, is_anomaly
+        )
+
+        if is_anomaly:
+            # Scenario 1: Anomaly detected, send POST to api/v1/anomalies
+            created_at_iso = saved_record.created_at.isoformat() if hasattr(saved_record, "created_at") and saved_record.created_at else None
+            self._send_anomaly_to_cloud(device_id, weight, created_at_iso)
+        else:
+            # Scenario 2: Variation within normal tolerance, discard cloud call
+            logging.info("Weight variation within normal tolerance for device %s. Cloud anomaly report skipped.", device_id)
+
         # Retrieves recent records from the configured interval and computes the average
         recent_records = self.weight_record_repository.find_by_device_in_interval(device_id)
         averages = self.weight_record_service.calculate_averages(recent_records)
+
+        # Retrieve the last registered environment record when available.
+        environment_record_repository = getattr(self, "environment_record_repository", None)
+        environment_record = (
+            environment_record_repository.find_last_record_by_device(device_id)
+            if environment_record_repository
+            else None
+        )
+        logging.info(
+            "Last environment record for device %s: temperature=%s, humidity=%s, timestamp=%s",
+            device_id, environment_record.temperature if environment_record else None, environment_record.humidity if environment_record else None, environment_record.created_at.isoformat() if environment_record else None
+        )
+
+        # Sync data with the cloud API. Best-effort: never fails the local telemetry use-case.
+        try:
+            telemetry_sync_client.sync(device_threshold, record, environment_record)
+        except Exception as ex:
+            logging.exception("Unexpected error syncing weight telemetry to cloud: %s", ex)
 
         # Returns the saved record and updated averages
         return saved_record, averages
 
 
 class EnvironmentRecordApplicationService:
-    """Application service that orchestrates the create environment record
+    """Application service that orchestrates the creation of an environment record
     use-case.
 
     Responsibilities:
@@ -124,6 +224,7 @@ class EnvironmentRecordApplicationService:
         self.environment_record_service = EnvironmentRecordService()
         self.device_threshold_repository = DeviceThresholdRepository()
         self.device_repository = DeviceRepository()
+        self.weight_record_repository = WeightRecordRepository()
 
     DEFAULT_MIN_TEMPERATURE_CELSIUS = 0.1
     DEFAULT_MAX_TEMPERATURE_CELSIUS = 90.1
@@ -169,50 +270,16 @@ class EnvironmentRecordApplicationService:
     def _is_outside_range(value: float, minimum: float, maximum: float) -> bool:
         return value < minimum or value > maximum
 
+    @staticmethod
     def _send_environment_telemetry_to_cloud(
-            self,
-            record: EnvironmentRecord,
-            assigned_batch_id: str | None,
+        threshold: DeviceThreshold | None,
+        weight_record: WeightRecord | None,
+        environment_record: EnvironmentRecord,
     ) -> None:
-        base_url = os.getenv("CLOUD_API_BASE_URL")
-        telemetry_url = os.getenv("CLOUD_TELEMETRIES_URL")
-        token = os.getenv("CLOUD_API_TOKEN")
-
-        if not telemetry_url and base_url:
-            telemetry_url = f"{base_url.rstrip('/')}/api/v1/telemetries"
-
-        if not telemetry_url:
-            logging.info("Cloud telemetry sync skipped: CLOUD_TELEMETRIES_URL is not configured")
-            return
-
-        payload = {
-            "temperatureInCelsius": record.temperature,
-            "humidityPercentage": record.humidity,
-            "assignedBatchId": assigned_batch_id,
-            "deviceId": record.device_id,
-            "temperature_is_anomaly": record.temperature_is_anomaly,
-            "humidity_is_anomaly": record.humidity_is_anomaly,
-        }
-        headers = {"Content-Type": "application/json"}
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-
-        body = json.dumps(payload).encode("utf-8")
-        cloud_request = request.Request(
-            telemetry_url,
-            data=body,
-            headers=headers,
-            method="POST",
-        )
-
         try:
-            with request.urlopen(cloud_request, timeout=5) as response:
-                logging.info(
-                    "Environment telemetry synced to cloud with status %s",
-                    response.status,
-                )
-        except (error.HTTPError, error.URLError, TimeoutError) as ex:
-            logging.exception("Error syncing environment telemetry to cloud: %s", ex)
+            telemetry_sync_client.sync(threshold, weight_record, environment_record)
+        except Exception as ex:
+            logging.exception("Unexpected error syncing environment telemetry to cloud: %s", ex)
 
     def create_environment_record(
         self,
@@ -237,8 +304,6 @@ class EnvironmentRecordApplicationService:
             created_at (str | None): ISO 8601 timestamp of the reading. Passed
                 to the domain service; accepts ``None`` to default to the
                 current UTC time.
-            api_key (str): Value of the ``X-API-Key`` request header used to
-                authenticate the device.
 
         Returns:
             tuple[EnvironmentRecord, dict]: A two-element tuple containing the
@@ -253,6 +318,12 @@ class EnvironmentRecordApplicationService:
             raise ValueError("Device not found")
 
         thresholds = self._get_thresholds_for_device(device_id)
+
+        try:
+            threshold: DeviceThreshold | None = self.device_threshold_repository.get_by_device_id(device_id)
+        except Exception:
+            threshold = None
+
         temperature_is_anomaly = self._is_outside_range(
             float(temperature),
             thresholds["min_temperature"],
@@ -273,14 +344,22 @@ class EnvironmentRecordApplicationService:
             humidity_is_anomaly,
         )
         saved_record = self.environment_record_repository.save(record)
-        self._send_environment_telemetry_to_cloud(
-            saved_record,
-            thresholds["assigned_batch_id"],
-        )
 
         recent_records = self.environment_record_repository.find_by_device_in_interval(
             device_id
         )
         averages = self.environment_record_service.calculate_averages(recent_records)
+
+        # Fetch the last weight record when available.
+        weight_record_repository = getattr(self, "weight_record_repository", None)
+        last_weight_record = (
+            weight_record_repository.find_last_record_by_device(device_id)
+            if weight_record_repository
+            else None
+        )
+
+        # Sync data with the cloud API after local persistence. Cloud sync must
+        # not block the MQTT response expected by the embedded device.
+        self._send_environment_telemetry_to_cloud(threshold, last_weight_record, record)
 
         return saved_record, averages

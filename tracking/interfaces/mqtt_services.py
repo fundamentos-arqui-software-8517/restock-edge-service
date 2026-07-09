@@ -1,6 +1,7 @@
 import json
 import logging
 
+from iam.application.services import AuthApplicationService
 from tracking.application.services import WeightRecordApplicationService, EnvironmentRecordApplicationService
 
 # Module-level singleton; it contains no request-specific mutable state.
@@ -8,6 +9,9 @@ weight_record_service = WeightRecordApplicationService()
 
 # Module-level singleton for environment record operations.
 environment_record_service = EnvironmentRecordApplicationService()
+
+# Module-level singleton for device services.
+device_service = AuthApplicationService()
 
 
 def validate_telemetry_payload(payload, telemetry_type: str):
@@ -66,12 +70,12 @@ def publish_telemetry_response(device_id, telemetry_type, response):
 
     try:
         # Construct the response topic based on the device ID and telemetry type
-        response_topic = f"store/{device_id}/response/{telemetry_type}"
+        response_topic = f"stores/{device_id}/response/{telemetry_type}"
 
         # Calls the publish method of the MQTT service to publish the response to the response topic
         mqtt_service.publish(response_topic, response, qos=1)
 
-        logging.info("Response send to response topic %s",response_topic)
+        logging.info("Response send to response topic %s", response_topic)
     except Exception as ex:
         logging.exception("Error while publishing response: %s", ex)
         raise ValueError(f"Error while publishing response: {ex}")
@@ -92,7 +96,7 @@ def create_weight_record(device_id, payload):
                  created_at,
                  device_id,
                  raw_weight
-    )
+                 )
 
     # Creates a new weight record using the application service
     record, averages = weight_record_service.create_weight_record(
@@ -100,6 +104,9 @@ def create_weight_record(device_id, payload):
         weight=raw_weight,
         created_at=created_at
     )
+
+    # Fetches the display mode for the device
+    device = device_service.get_by_id(device_id)
 
     # Builds the response to be sent back to the device in a response topic
     response = {
@@ -109,6 +116,7 @@ def create_weight_record(device_id, payload):
         "physical_stock": record.physical_stock,
         "created_at": record.created_at.isoformat(),
         "average_physical_stock": averages["average_physical_stock"],
+        "display_mode": device.display_mode,
     }
 
     # Publishes the response to the response topic
@@ -132,7 +140,7 @@ def create_environment_record(device_id, payload):
                  device_id,
                  temperature,
                  humidity
-    )
+                 )
 
     # Creates a new environment record using the application service
     record, averages = environment_record_service.create_environment_record(
@@ -141,6 +149,9 @@ def create_environment_record(device_id, payload):
         humidity=humidity,
         created_at=created_at
     )
+
+    # Fetches the display mode for the device
+    device = device_service.get_by_id(device_id)
 
     # Builds the response to be sent back to the device in a response topic
     response = {
@@ -153,6 +164,7 @@ def create_environment_record(device_id, payload):
         "created_at": record.created_at.isoformat(),
         "average_temperature": averages["average_temperature"],
         "average_humidity": averages["average_humidity"],
+        "display_mode": device.display_mode,
     }
 
     # Publishes the response to the response topic
@@ -197,4 +209,4 @@ def on_tracking_telemetry_message(msg, topic_parts):
 
         handler(device_id, payload)
     except Exception as ex:
-        logging.exception("Error while processing MQTT message: %s",ex)
+        logging.exception("Error while processing MQTT message: %s", ex)
