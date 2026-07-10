@@ -1,17 +1,10 @@
 import json
 import logging
 
-from iam.application.services import AuthApplicationService
-from tracking.application.services import WeightRecordApplicationService, EnvironmentRecordApplicationService
+from tracking.application.telemetry_processor import TelemetryProcessor
 
 # Module-level singleton; it contains no request-specific mutable state.
-weight_record_service = WeightRecordApplicationService()
-
-# Module-level singleton for environment record operations.
-environment_record_service = EnvironmentRecordApplicationService()
-
-# Module-level singleton for device services.
-device_service = AuthApplicationService()
+telemetry_processor = TelemetryProcessor()
 
 
 def validate_telemetry_payload(payload, telemetry_type: str):
@@ -89,35 +82,7 @@ def create_weight_record(device_id, payload):
     :param payload: The payload of the telemetry message.
     """
 
-    raw_weight = float(payload["raw_weight"])
-    created_at = str(payload["created_at"])
-
-    logging.info("Weight received at %s for device %s with value %s",
-                 created_at,
-                 device_id,
-                 raw_weight
-                 )
-
-    # Creates a new weight record using the application service
-    record, averages = weight_record_service.create_weight_record(
-        device_id=device_id,
-        weight=raw_weight,
-        created_at=created_at
-    )
-
-    # Fetches the display mode for the device
-    device = device_service.get_by_id(device_id)
-
-    # Builds the response to be sent back to the device in a response topic
-    response = {
-        "id": record.weight_record_id,
-        "device_id": record.device_id,
-        "raw_weight": record.raw_weight,
-        "physical_stock": record.physical_stock,
-        "created_at": record.created_at.isoformat(),
-        "average_physical_stock": averages["average_physical_stock"],
-        "display_mode": device.display_mode,
-    }
+    response = telemetry_processor.process_mqtt_weight_record(device_id, payload)
 
     # Publishes the response to the response topic
     publish_telemetry_response(device_id, "weight", response)
@@ -131,41 +96,7 @@ def create_environment_record(device_id, payload):
     :param payload: The payload of the telemetry message.
     """
 
-    temperature = float(payload["temperature"])
-    humidity = float(payload["humidity"])
-    created_at = str(payload["created_at"])
-
-    logging.info("Environment telemetry received at %s for device %s with temperature %s and humidity %s",
-                 created_at,
-                 device_id,
-                 temperature,
-                 humidity
-                 )
-
-    # Creates a new environment record using the application service
-    record, averages = environment_record_service.create_environment_record(
-        device_id=device_id,
-        temperature=temperature,
-        humidity=humidity,
-        created_at=created_at
-    )
-
-    # Fetches the display mode for the device
-    device = device_service.get_by_id(device_id)
-
-    # Builds the response to be sent back to the device in a response topic
-    response = {
-        "id": record.id,
-        "device_id": record.device_id,
-        "temperature": record.temperature,
-        "humidity": record.humidity,
-        "temperature_is_anomaly": record.temperature_is_anomaly,
-        "humidity_is_anomaly": record.humidity_is_anomaly,
-        "created_at": record.created_at.isoformat(),
-        "average_temperature": averages["average_temperature"],
-        "average_humidity": averages["average_humidity"],
-        "display_mode": device.display_mode,
-    }
+    response = telemetry_processor.process_mqtt_environment_record(device_id, payload)
 
     # Publishes the response to the response topic
     publish_telemetry_response(device_id, "environment", response)
