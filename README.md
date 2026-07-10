@@ -58,6 +58,8 @@ The Tracking bounded context is responsible for receiving, validating and storin
 Main responsibility:
 
 - register weight measurements from smart inventory devices
+- register environment measurements from smart inventory devices
+- expose `TelemetryProcessor` as an internal facade that lets REST and MQTT adapters delegate Tracking telemetry processing without changing external contracts
 
 Main domain concept:
 
@@ -87,6 +89,8 @@ Responsibilities:
 - orchestrate domain services and repositories
 - handle application-level operations
 - expose use cases to the interface layer
+
+In the Tracking bounded context, `TelemetryProcessor` is the internal processing facade used by the REST and MQTT adapters. It delegates to the existing application services for weight and environment telemetry; validation, anomaly detection, persistence and Edge-Cloud synchronization remain in the existing services.
 
 ### Infrastructure Layer
 

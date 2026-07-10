@@ -53,9 +53,22 @@ package "Tracking Bounded Context" {
     class create_weight_record {
       +POST /api/v1/tracking/weight-records
     }
+    class mqtt_tracking_adapter {
+      +stores/+/telemetry/weight
+      +stores/+/telemetry/environment
+    }
   }
 
   package "application" {
+    class TelemetryProcessor {
+      -weight_record_service: WeightRecordApplicationService
+      -environment_record_service: EnvironmentRecordApplicationService
+      +process_rest_weight_record(device_id, weight, created_at)
+      +process_rest_environment_record(device_id, temperature, humidity, created_at)
+      +process_mqtt_weight_record(device_id, payload)
+      +process_mqtt_environment_record(device_id, payload)
+    }
+
     class WeightRecordApplicationService {
       -weight_record_repository: WeightRecordRepository
       -weight_record_service: WeightRecordService
@@ -117,7 +130,9 @@ DeviceRepository ..> Device : creates
 AuthService --> Device : authenticates
 
 create_weight_record --> authenticate_request : validates
-create_weight_record --> WeightRecordApplicationService : uses
+create_weight_record --> TelemetryProcessor : delegates
+mqtt_tracking_adapter --> TelemetryProcessor : delegates
+TelemetryProcessor --> WeightRecordApplicationService : delegates
 WeightRecordApplicationService --> DeviceRepository : validates device
 WeightRecordApplicationService --> WeightRecordService : uses
 WeightRecordApplicationService --> WeightRecordRepository : uses
