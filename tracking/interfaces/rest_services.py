@@ -9,17 +9,13 @@ code selection.
 from flask import Blueprint, jsonify, request
 
 from iam.interfaces.services import authenticate_request
-from tracking.application.services import WeightRecordApplicationService
-from tracking.application.services import EnvironmentRecordApplicationService
+from tracking.application.telemetry_processor import TelemetryProcessor
 
 
 tracking_api = Blueprint("tracking_api", __name__)
 
 # Module-level singleton; it contains no request-specific mutable state.
-weight_record_service = WeightRecordApplicationService()
-
-# Module-level singleton for environment record operations.
-environment_record_service = EnvironmentRecordApplicationService()
+telemetry_processor = TelemetryProcessor()
 
 
 @tracking_api.route("/api/v1/tracking/weight-records", methods=["POST"])
@@ -59,7 +55,7 @@ def create_weight_record():
         device_id = data["device_id"]
         weight = data["weight"]
         created_at = data.get("created_at")
-        record, averages = weight_record_service.create_weight_record(
+        record, averages = telemetry_processor.process_rest_weight_record(
             device_id,
             weight,
             created_at,
@@ -120,7 +116,7 @@ def create_environment_record():
         temperature = data["temperature"]
         humidity = data["humidity"]
         created_at = data.get("created_at")
-        record, averages = environment_record_service.create_environment_record(
+        record, averages = telemetry_processor.process_rest_environment_record(
             device_id,
             temperature,
             humidity,
