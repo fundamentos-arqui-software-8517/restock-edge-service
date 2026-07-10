@@ -76,9 +76,9 @@ class TestWeightRecordEndpoint:
         record.physical_stock = 5.0
         record.created_at = datetime.now(timezone.utc)
 
-        with patch("tracking.interfaces.rest_services.weight_record_service") as mock_svc, \
+        with patch("tracking.interfaces.rest_services.telemetry_processor") as mock_processor, \
                 patch("iam.interfaces.services.authenticate_request", return_value=None):
-            mock_svc.create_weight_record.return_value = (
+            mock_processor.process_rest_weight_record.return_value = (
                 record, {"average_physical_stock": 5.0}
             )
             response = client.post(
@@ -88,12 +88,25 @@ class TestWeightRecordEndpoint:
             )
 
         assert response.status_code == 201
+        body = response.get_json()
+        assert body == {
+            "id": 1,
+            "device_id": "device-1",
+            "weight": 500.0,
+            "physical_stock": 5.0,
+            "created_at": record.created_at.isoformat(),
+        }
+        mock_processor.process_rest_weight_record.assert_called_once_with(
+            "device-1",
+            500.0,
+            None,
+        )
 
     def test_returns_400_when_device_not_found(self, client):
         """IT-ES-01b: Unknown device_id → 400 Bad Request."""
-        with patch("tracking.interfaces.rest_services.weight_record_service") as mock_svc, \
+        with patch("tracking.interfaces.rest_services.telemetry_processor") as mock_processor, \
              patch("iam.interfaces.services.authenticate_request", return_value=None):
-            mock_svc.create_weight_record.side_effect = ValueError("Device not found")
+            mock_processor.process_rest_weight_record.side_effect = ValueError("Device not found")
             response = client.post(
                 "/api/v1/tracking/weight-records",
                 data=json.dumps({"device_id": "unknown", "weight": 500.0}),
@@ -136,9 +149,9 @@ class TestEnvironmentRecordEndpoint:
         """IT-ES-02a: Valid payload returns 200 OK."""
         record = self._make_env_record()
 
-        with patch("tracking.interfaces.rest_services.environment_record_service") as mock_svc, \
+        with patch("tracking.interfaces.rest_services.telemetry_processor") as mock_processor, \
              patch("iam.interfaces.services.authenticate_request", return_value=None):
-            mock_svc.create_environment_record.return_value = (
+            mock_processor.process_rest_environment_record.return_value = (
                 record, {"average_temperature": 25.0, "average_humidity": 60.0}
             )
             response = client.post(
@@ -149,17 +162,31 @@ class TestEnvironmentRecordEndpoint:
 
         assert response.status_code == 200
         body = response.get_json()
-        assert body["temperature"] == 25.0
-        assert body["humidity"] == 60.0
-        assert body["average_temperature"] == 25.0
+        assert body == {
+            "id": 42,
+            "device_id": "device-1",
+            "temperature": 25.0,
+            "humidity": 60.0,
+            "temperature_is_anomaly": False,
+            "humidity_is_anomaly": False,
+            "created_at": record.created_at.isoformat(),
+            "average_temperature": 25.0,
+            "average_humidity": 60.0,
+        }
+        mock_processor.process_rest_environment_record.assert_called_once_with(
+            "device-1",
+            25.0,
+            60.0,
+            None,
+        )
 
     def test_anomaly_flags_are_present_in_response(self, client):
         """IT-ES-02b: Response body includes anomaly flag fields."""
         record = self._make_env_record(temp_anomaly=True)
 
-        with patch("tracking.interfaces.rest_services.environment_record_service") as mock_svc, \
+        with patch("tracking.interfaces.rest_services.telemetry_processor") as mock_processor, \
              patch("iam.interfaces.services.authenticate_request", return_value=None):
-            mock_svc.create_environment_record.return_value = (
+            mock_processor.process_rest_environment_record.return_value = (
                 record, {"average_temperature": 50.0, "average_humidity": 60.0}
             )
             response = client.post(
@@ -174,9 +201,9 @@ class TestEnvironmentRecordEndpoint:
 
     def test_returns_400_when_device_not_found(self, client):
         """IT-ES-02c: Unknown device → 400 Bad Request."""
-        with patch("tracking.interfaces.rest_services.environment_record_service") as mock_svc, \
+        with patch("tracking.interfaces.rest_services.telemetry_processor") as mock_processor, \
              patch("iam.interfaces.services.authenticate_request", return_value=None):
-            mock_svc.create_environment_record.side_effect = ValueError("Device not found")
+            mock_processor.process_rest_environment_record.side_effect = ValueError("Device not found")
             response = client.post(
                 "/api/v1/tracking/environment-records",
                 data=json.dumps({"device_id": "unknown", "temperature": 25.0, "humidity": 60.0}),
