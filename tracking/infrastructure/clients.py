@@ -18,6 +18,7 @@ class TelemetrySyncClient:
         """ Initialize the TelemetrySyncClient with the cloud API base URL and telemetry API URL from environment variables. """
         self.api_base_url = os.getenv('CLOUD_API_BASE_URL')
         self.telemetry_api_url = os.getenv('CLOUD_TELEMETRY_URL')
+        self.api_token = os.getenv('CLOUD_API_TOKEN')
 
     def sync(
             self,
@@ -42,6 +43,8 @@ class TelemetrySyncClient:
         headers = {
             "Content-Type": "application/json"
         }
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
 
         try:
             response = requests.post(self.telemetry_api_url, json=payload, headers=headers)

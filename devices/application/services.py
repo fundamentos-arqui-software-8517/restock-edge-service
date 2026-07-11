@@ -158,29 +158,44 @@ class DeviceStatusApplicationService:
         """
         Send a critical device health event to the configured cloud endpoint.
 
+        Reuses the cloud's /api/v1/devices-health ingestion endpoint (the same
+        resource the cloud already exposes for device health metrics) since
+        there is no separate /api/v1/device-events resource on the cloud side.
+
         The call is best-effort: missing configuration or network errors are
         logged and never fail the local status registration flow.
         """
+        base_url = os.getenv("CLOUD_API_BASE_URL")
         events_url = os.getenv("CLOUD_DEVICE_EVENTS_URL")
+        token = os.getenv("CLOUD_API_TOKEN")
+
+        if not events_url and base_url:
+            events_url = f"{base_url.rstrip('/')}/api/v1/devices-health"
 
         if not events_url:
             logging.info("Cloud device event sync skipped: CLOUD_DEVICE_EVENTS_URL is not configured")
             return
 
+        value = event.value if event.value is not None else report.value
+        threshold = event.threshold if event.threshold is not None else report.threshold
+
         payload = {
             "deviceId": report.device_id,
             "branchId": report.branch_id,
-            "healthStatus": report.health_status,
-            "eventType": event.event_type,
-            "metric": event.metric,
-            "value": event.value,
-            "threshold": event.threshold,
-            "reason": event.reason,
-            "message": event.message,
-            "source": event.source,
-            "createdAt": event.created_at.isoformat(),
+            "alertType": event.event_type or report.alert_type,
+            "metric": event.metric or report.metric,
+            "value": str(value) if value is not None else None,
+            "threshold": str(threshold) if threshold is not None else None,
+            "message": event.message or event.reason,
+            "cpuUsagePercentage": report.cpu_usage_percentage,
+            "memoryFreeBytes": int(report.free_heap_bytes) if report.free_heap_bytes is not None else None,
+            "voltageVolts": report.voltage,
+            "temperatureInCelsius": report.internal_temperature_celsius,
+            "timestamp": event.created_at.isoformat(),
         }
         headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
 
         body = json.dumps(payload).encode("utf-8")
         cloud_request = request.Request(
